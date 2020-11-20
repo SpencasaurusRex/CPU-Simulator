@@ -2,19 +2,23 @@ package main
 
 import "core:fmt"
 import "../raylib"
-
+import "core:math"
 
 IO :: struct 
 {
     on : bool,
-    id : int
+    id : int,
+    x : i32,
+    y : i32
 };
 
 Nand :: struct
 {
     in0 : int,
     in1 : int,
-    out : int
+    out : int,
+    x: i32,
+    y: i32
 };
 
 State :: struct 
@@ -47,12 +51,14 @@ create_connection :: proc(state: ^State, from: int, to: int)
     append(&state.changed, from);
 }
 
-create_nand :: proc(state: ^State) -> (int,int,int)
+create_nand :: proc(state: ^State, x: i32, y: i32) -> (int,int,int)
 {
     nand : Nand;
     nand.in0 = create_io(state);
     nand.in1 = create_io(state);
     nand.out = create_io(state);
+
+    move_nand(state, &nand, x, y);
 
     // TODO this won't exactly work if we're removing
     // nands dynamically in middle of list
@@ -65,10 +71,30 @@ create_nand :: proc(state: ^State) -> (int,int,int)
     return nand.in0, nand.in1, nand.out;
 }
 
+move_nand :: proc(state: ^State, nand: ^Nand, x: i32, y: i32)
+{
+    // TODO: More robust transform system to replace this
+    state.ios[nand.in0].x = x + 0;
+    state.ios[nand.in0].y = y + 50;
+
+    state.ios[nand.in1].x = x + 0;
+    state.ios[nand.in1].y = y + 100;
+
+    state.ios[nand.out].x = x + 190;
+    state.ios[nand.out].y = y + 75;
+
+    nand.x = x;
+    nand.y = y;
+}
+
 set_io :: proc(state: ^State, id: int, on: bool)
 {
+    if state.ios[id].on != on 
+    {
+        append(&state.changed, id);
+    }
+
     state.ios[id].on = on;
-    append(&state.changed, id);
 }
 
 toggle_io :: proc(state: ^State, id: int)
@@ -91,13 +117,21 @@ basic_nand_scenario :: proc(state: ^State)
     i0 := create_io(state);
     i1 := create_io(state);
     
-    i2,i3,i4 := create_nand(state);
+    i2,i3,i4 := create_nand(state, 350, 150);
 
     i5 := create_io(state);
 
     create_connection(state, i0, i2);
     create_connection(state, i1, i3);
     create_connection(state, i4, i5);
+}
+
+self_not_scenario :: proc(state: ^State)
+{
+    i0,i1,out := create_nand(state, 350, 150);
+
+    create_connection(state, out, i0);
+    create_connection(state, out, i1);
 }
 
 process_state :: proc(state: ^State)
@@ -144,10 +178,7 @@ draw_io :: proc(state: ^State, id: int, x: i32, y: i32)
 {
     using raylib;
 
-    IO_RADIUS :: 10;
-    color := SKYBLUE if state.ios[id].on else DARKGRAY;
-
-    draw_circle(x, y, IO_RADIUS, color);
+    
 }
 
 draw_connection :: proc(x1: i32, y1: i32, x2: i32, y2: i32)
@@ -156,6 +187,16 @@ draw_connection :: proc(x1: i32, y1: i32, x2: i32, y2: i32)
     color := ORANGE;
 
     draw_line(x1, y1, x2, y2, color);
+}
+
+draw_nand :: proc(x: i32, y: i32)
+{
+    using raylib;
+    color := RED;
+
+    draw_rectangle(x, y, 100, 150, color);
+    draw_circle(x+100, y+75, 75, color);
+    draw_circle(x+190, y+75, 20, color);
 }
 
 main :: proc()
@@ -175,18 +216,19 @@ main :: proc()
 
     state: State;
     init_state(&state);
-    basic_nand_scenario(&state);
+    //basic_nand_scenario(&state);
+    self_not_scenario(&state);
+
+    frame := 0;
 
     for !window_should_close()
     {
         if is_key_pressed(.A) 
         {
-            fmt.println("Toggle 0");
             toggle_io(&state, 0);
         }
         if is_key_pressed(.D) 
         {
-            fmt.println("Toggle 1");
             toggle_io(&state, 1);
         }
 
@@ -197,29 +239,25 @@ main :: proc()
 
         clear_background(background);
         
-        draw_rectangle(350, 150, 100, 150, RED);
-        draw_circle(450, 225, 75, RED);
-        draw_circle(545, 225, 20, RED);
+        for nand in state.nands
+        {
+            draw_nand(nand.x, nand.y);
+        }
 
-        draw_connection(200, 100, 275, 100);
-        draw_connection(275, 100, 275, 200);
-        draw_connection(275, 200, 350, 200);
-        
-        draw_connection(200, 350, 275, 350);
-        draw_connection(275, 350, 275, 250);
-        draw_connection(275, 250, 350, 250);
-        
-        draw_connection(545, 225, 700, 225);
+        for io in state.ios 
+        {
+            IO_RADIUS :: 10;
+            color := SKYBLUE if io.on else DARKGRAY;
+            draw_circle(io.x, io.y, IO_RADIUS, color);
+        }
 
-        draw_io(&state, 0, 200, 100);
-        draw_io(&state, 1, 200, 350);
+        theta : f32 = f32(frame) * f32(.1);
+        move_nand(&state, &state.nands[0], 
+            i32(350 + math.cos(theta) * 20), 
+            i32(150 + math.sin(theta) * 20)
+        );
 
-        draw_io(&state, 2, 350, 200);
-        draw_io(&state, 3, 350, 250);
-
-        draw_io(&state, 4, 545, 225);
-
-        draw_io(&state, 5, 700, 225);
+        frame = frame + 1;
     }
 
     close_window();
